@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Autorización completa</title>
+</head>
+<body>
+  <p style="text-align:center; font-family: sans-serif; font-size: 13px; color: #44546f;">
+    Esta ventana debería cerrarse sola. Si no lo hace, podés cerrarla vos.
+  </p>
+
+  <script>
+    // Trello pone el token en el hash de la URL cuando callback_method=fragment
+    var hash = window.location.hash.substring(1);
+    var params = {};
+    hash.split('&').forEach(function (pair) {
+      var kv = pair.split('=');
+      if (kv[0]) {
+        params[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || '');
+      }
+    });
+    var token = params.token;
+
+    // t.authorize(), en la ventana que abrió este popup, dejó una función
+    // "authorize" colgada de esa ventana (window.opener) para recibir el token.
+    var authorize;
+    try {
+      if (window.opener && typeof window.opener.authorize === 'function') {
+        authorize = window.opener.authorize;
+      }
+    } catch (e) {
+      // Restricciones de seguridad del navegador; no hacemos nada más.
+    }
+
+    if (authorize) {
+      authorize(token);
+    }
+  </script>
+</body>
+</html>
