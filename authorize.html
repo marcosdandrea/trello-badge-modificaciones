@@ -41,11 +41,25 @@
       appName: 'Badge de notificacion de cambios por tarjeta'
     });
 
+    // Flujo de bajo nivel (t.authorize), en vez de t.getRestApi().authorize(),
+    // que tiene un bug conocido de postMessage en Power-Ups auto-hosteados.
+    var returnUrl = window.location.origin + '/trello-badge-modificaciones/auth-success.html';
+
+    var authUrl = 'https://trello.com/1/authorize'
+      + '?expiration=never'
+      + '&name=' + encodeURIComponent('Badge de notificacion de cambios por tarjeta')
+      + '&scope=read'
+      + '&key=' + API_KEY
+      + '&callback_method=fragment'
+      + '&return_url=' + encodeURIComponent(returnUrl);
+
     document.getElementById('authorize-btn').addEventListener('click', function () {
-      t.getRestApi()
-        .authorize({ scope: 'read' })
+      t.authorize(authUrl, { height: 680, width: 580 })
+        .then(function (token) {
+          return t.set('member', 'private', 'token', token);
+        })
         .then(function () {
-          t.closePopup();
+          return t.closePopup();
         })
         .catch(function (err) {
           console.error('Error de autorizacion', err);
