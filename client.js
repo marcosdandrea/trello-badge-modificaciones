@@ -1,4 +1,3 @@
-
 /* global TrelloPowerUp */
  
 // API Key generada en https://trello.com/power-ups/admin
@@ -81,7 +80,16 @@ window.TrelloPowerUp.initialize({
           title: 'Modificaciones',
           text: 'Autorizar acceso',
           callback: function (t) {
-            return t.getRestApi().authorize({ scope: 'read' });
+            // No llamamos a authorize() directo desde acá: el navegador no
+            // lo reconoce como un click real del usuario y el popup blocker
+            // lo frena en silencio. En cambio, abrimos un popup de Trello
+            // con un botón real adentro (authorize.html) y autorizamos
+            // desde ESE click.
+            return t.popup({
+              title: 'Autorizar acceso',
+              url: './authorize.html',
+              height: 140
+            });
           }
         }];
       }
