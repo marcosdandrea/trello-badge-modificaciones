@@ -25,6 +25,14 @@ function getStoredToken(t) {
   return t.get('member', 'private', 'token', null);
 }
 
+// El ID de tarjeta de Trello es un ObjectId de Mongo: los primeros 8
+// caracteres hex codifican el timestamp unix de creación. Lo usamos como
+// fallback cuando todavía no sabemos cuándo la persona la vio por última vez.
+function cardCreationDate(cardId) {
+  var seconds = parseInt(cardId.substring(0, 8), 16);
+  return new Date(seconds * 1000);
+}
+
 window.TrelloPowerUp.initialize({
 
   // Badge que se ve en el FRENTE de la tarjeta, en la vista de tablero
@@ -43,15 +51,14 @@ window.TrelloPowerUp.initialize({
         var lastViewed = results[0];
         var card = results[1];
 
-        // Primera vez que este Power-Up corre en esta tarjeta para este
-        // usuario: no hay baseline todavía. No mostramos badge para no
-        // generar ruido con el historial completo de la tarjeta.
-        // Se establece la primera vez que la persona abre la tarjeta.
-        if (!lastViewed) {
-          return [];
-        }
+        // Si nunca abriste esta tarjeta con el Power-Up activo, no hay
+        // baseline guardada -> usamos la fecha de creación de la tarjeta
+        // como punto de partida, así igual se muestra el contador (con
+        // el total acumulado desde que existe la tarjeta) en vez de nada.
+        var sinceIso = lastViewed
+          ? new Date(lastViewed).toISOString()
+          : cardCreationDate(card.id).toISOString();
 
-        var sinceIso = new Date(lastViewed).toISOString();
         var url = buildActionsUrl(card.id, token, sinceIso);
 
         return fetch(url)
