@@ -18,6 +18,11 @@ var CACHE_TTL_MS = 20000; // 20 segundos
 // mientras dure la pestaña abierta.
 var boardActionsCache = { data: null, fetchedAt: 0, boardId: null };
 
+// Si el caché venció, puede haber 20+ tarjetas preguntando al mismo
+// tiempo. Sin esto, cada una dispara su propio fetch (vuelve el 429/timeout).
+// Con esto, la primera dispara el pedido y el resto espera ESE mismo resultado.
+var inFlightRequest = null;
+
 function getStoredToken(t) {
   // Guardamos el token nosotros mismos (no con getRestApi(), que tiene
   // un bug de postMessage en Power-Ups auto-hosteados fuera de trello.com)
@@ -46,21 +51,32 @@ function getBoardActions(t, token) {
       return boardActionsCache.data;
     }
 
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
     var url = 'https://api.trello.com/1/boards/' + board.id + '/actions'
       + '?filter=' + ACTION_FILTER
       + '&fields=date,data&limit=1000'
       + '&key=' + API_KEY
       + '&token=' + token;
 
-    return fetch(url)
+    inFlightRequest = fetch(url)
       .then(function (res) {
         if (!res.ok) throw new Error('Trello API ' + res.status);
         return res.json();
       })
       .then(function (actions) {
         boardActionsCache = { data: actions, fetchedAt: now, boardId: board.id };
+        inFlightRequest = null;
         return actions;
+      })
+      .catch(function (err) {
+        inFlightRequest = null;
+        throw err;
       });
+
+    return inFlightRequest;
   });
 }
 
