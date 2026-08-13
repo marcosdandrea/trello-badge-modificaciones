@@ -10,14 +10,13 @@ var API_KEY = 'c638996caa5e11f7932f1f2963509de9';
 // addAttachmentToCard, updateCheckItemStateOnCard)
 var ACTION_FILTER = 'updateCard,commentCard';
 
-function buildActionsUrl(cardId, token, sinceIso) {
-  return 'https://api.trello.com/1/cards/' + cardId + '/actions'
-    + '?filter=' + ACTION_FILTER
-    + '&since=' + encodeURIComponent(sinceIso)
-    + '&fields=date&limit=50'
-    + '&key=' + API_KEY
-    + '&token=' + token;
-}
+// Cuánto tiempo reusamos el resultado de la última consulta al tablero
+// antes de volver a pedirle a la API. Esto es lo que evita el 429.
+var CACHE_TTL_MS = 20000; // 20 segundos
+
+// Caché en memoria compartido por todas las tarjetas de este tablero,
+// mientras dure la pestaña abierta.
+var boardActionsCache = { data: null, fetchedAt: 0, boardId: null };
 
 function getStoredToken(t) {
   // Guardamos el token nosotros mismos (no con getRestApi(), que tiene
@@ -33,6 +32,38 @@ function cardCreationDate(cardId) {
   return new Date(seconds * 1000);
 }
 
+// UNA sola consulta trae la actividad de TODO el tablero (no tarjeta por
+// tarjeta), y la cacheamos un rato. Todas las tarjetas leen de acá.
+function getBoardActions(t, token) {
+  var now = Date.now();
+
+  return t.board('id').then(function (board) {
+    var cacheIsValid = boardActionsCache.data
+      && boardActionsCache.boardId === board.id
+      && (now - boardActionsCache.fetchedAt) < CACHE_TTL_MS;
+
+    if (cacheIsValid) {
+      return boardActionsCache.data;
+    }
+
+    var url = 'https://api.trello.com/1/boards/' + board.id + '/actions'
+      + '?filter=' + ACTION_FILTER
+      + '&fields=date,data&limit=1000'
+      + '&key=' + API_KEY
+      + '&token=' + token;
+
+    return fetch(url)
+      .then(function (res) {
+        if (!res.ok) throw new Error('Trello API ' + res.status);
+        return res.json();
+      })
+      .then(function (actions) {
+        boardActionsCache = { data: actions, fetchedAt: now, boardId: board.id };
+        return actions;
+      });
+  });
+}
+
 window.TrelloPowerUp.initialize({
 
   // Badge que se ve en el FRENTE de la tarjeta, en la vista de tablero
@@ -46,40 +77,34 @@ window.TrelloPowerUp.initialize({
 
       return Promise.all([
         t.get('card', 'private', 'lastViewed', null),
-        t.card('id')
+        t.card('id'),
+        getBoardActions(t, token)
       ]).then(function (results) {
         var lastViewed = results[0];
         var card = results[1];
+        var allActions = results[2];
 
         // Si nunca abriste esta tarjeta con el Power-Up activo, no hay
         // baseline guardada -> usamos la fecha de creación de la tarjeta
-        // como punto de partida, así igual se muestra el contador (con
-        // el total acumulado desde que existe la tarjeta) en vez de nada.
-        var sinceIso = lastViewed
-          ? new Date(lastViewed).toISOString()
-          : cardCreationDate(card.id).toISOString();
+        // como punto de partida.
+        var sinceMs = lastViewed ? lastViewed : cardCreationDate(card.id).getTime();
 
-        var url = buildActionsUrl(card.id, token, sinceIso);
+        var count = allActions.filter(function (action) {
+          var actionCardId = action.data && action.data.card && action.data.card.id;
+          return actionCardId === card.id && new Date(action.date).getTime() > sinceMs;
+        }).length;
 
-        return fetch(url)
-          .then(function (res) {
-            if (!res.ok) throw new Error('Trello API ' + res.status);
-            return res.json();
-          })
-          .then(function (actions) {
-            var count = Array.isArray(actions) ? actions.length : 0;
-            if (count === 0) return [];
-            return [{
-              text: String(count),
-              icon: 'https://marcosdandrea.github.io/trello-badge-modificaciones/alert-icon.svg',
-              monochrome: false, // sin esto, Trello re-tiñe el ícono a gris/blanco según el tema
-              color: 'red',
-              refresh: 15 // segundos; 10 es el mínimo permitido por Trello
-            }];
-          })
-          .catch(function () {
-            return []; // fallo silencioso: mejor no mostrar nada que romper la UI
-          });
+        if (count === 0) return [];
+
+        return [{
+          text: String(count),
+          icon: 'https://marcosdandrea.github.io/trello-badge-modificaciones/alert-icon.svg',
+          monochrome: false, // sin esto, Trello re-tiñe el ícono a gris/blanco según el tema
+          color: 'red',
+          refresh: 20 // segundos; alineado al CACHE_TTL_MS de arriba
+        }];
+      }).catch(function () {
+        return []; // fallo silencioso: mejor no mostrar nada que romper la UI
       });
     });
   },
