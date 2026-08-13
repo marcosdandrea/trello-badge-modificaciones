@@ -64,6 +64,8 @@ window.TrelloPowerUp.initialize({
             if (count === 0) return [];
             return [{
               text: String(count),
+              icon: 'https://marcosdandrea.github.io/trello-badge-modificaciones/alert-icon.svg',
+              monochrome: false, // sin esto, Trello re-tiñe el ícono a gris/blanco según el tema
               color: 'red',
               refresh: 15 // segundos; 10 es el mínimo permitido por Trello
             }];
